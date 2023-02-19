@@ -71,6 +71,7 @@ int set_task(struct Tasks *tasks, int is_absolute, struct itimerspec value, char
     {
         if (tasks->tasks[x].is_running == 0)
         {
+            sem_wait(&sem_tasks);
             tasks->tasks[x].task = task;
             printf("ARGC = %d\n", argc);
             tasks->tasks[x].argv = parse_argv(argv, argc);
@@ -84,6 +85,7 @@ int set_task(struct Tasks *tasks, int is_absolute, struct itimerspec value, char
             else
                 tasks->tasks[x].is_cyclic = 0;
             tasks->tasks[x].task_id = x;
+            sem_post(&sem_tasks);
             return x;
         }
     }
@@ -95,13 +97,14 @@ int cancel_task(struct Tasks *tasks, int task_id)
 {
     if (!tasks)
         return -1;
+    sem_wait(&sem_tasks);
     if (tasks->tasks[task_id].is_running)
     {
         timer_delete(tasks->tasks[task_id].timer_id);
         tasks->tasks[task_id].is_running = 0;
         return task_id;
     }
-
+    sem_post(&sem_tasks);
     return -1;
 }
 
@@ -127,7 +130,7 @@ int get_all_running_tasks(struct Tasks *tasks_list, struct Tasks *tasks_table)
             tasks_list->tasks_count++;
         }
     }
-    sem_wait(&sem_tasks);
+    sem_post(&sem_tasks);
 }
 
 int respond_to_client(char *res_queue, MessageType res_type, int task_id, struct Tasks *tasks)
@@ -174,7 +177,7 @@ void *timer_notify(void *args)
         timer_delete(task->timer_id);
         task->is_running = 0;
     }
-    sem_wait(&sem_tasks);
+    sem_post(&sem_tasks);
     printf("Status %d\n", status);
 }
 
