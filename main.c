@@ -1,7 +1,7 @@
 #include "mycron.h"
 
 
-int main(){
-    myCronInit();
+int main(int argc, char *argv[]){
+    myCronInit(argc, argv);
     return 0;
 }
