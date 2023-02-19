@@ -1,6 +1,6 @@
 #import "mycron.h"
 
-extern const char* queue_name;
+extern const char *queue_name;
 
 int myCronServer()
 {
@@ -18,26 +18,30 @@ int myCronServer()
     mqd_t mq = mq_open(queue_name, O_RDONLY | O_CREAT, 0666, &attr);
     if (mq == -1)
     {
-        printf("Failed to open server with errno %d\n", errno);
         return -1;
     }
 
     Message msg;
-
+    struct Tasks task_list;
     while (1)
     {
-        printf("Czekamy na wiadomosc\n");
         int ret = mq_receive(mq, (Message *)&msg, sizeof(Message), NULL);
-        printf("otrzymalismy wiadomosc\n");
+
+        int id;
+
         switch (msg.type)
         {
         case SET_TASK:
-            printf("%d", set_task(&tasks, 0, msg.request.time));
+            id = set_task(&tasks, 0, msg.request.time);
             break;
         case CANCEL_TASK:
-            printf("cancel ret %d\n", cancel_task(&tasks, msg.cancelled_task_id));
+            id = cancel_task(&tasks, msg.cancelled_task_id);
             break;
+        case LIST_TASKS:
+            get_all_running_tasks(&task_list, &tasks);
         }
+
+        respond_to_client(msg.response_queue, msg.type, id, &task_list);
     }
 }
 
@@ -57,7 +61,6 @@ int set_task(struct Tasks *tasks, int is_absolute, struct itimerspec value)
 {
     for (int x = 0; x < tasks->tasks_count; x++)
     {
-
         if (tasks->tasks[x].is_running == 0)
         {
             timer_t timer_id = create_timer();
@@ -65,8 +68,8 @@ int set_task(struct Tasks *tasks, int is_absolute, struct itimerspec value)
             timer_settime(timer_id, 0, &value, NULL);
             tasks->tasks[x].timer_id = timer_id;
             tasks->tasks[x].is_running = 1;
-            printf("task id %d\n",x);
-            return 0;
+            tasks->tasks[x].task_id = x;
+            return x;
         }
     }
 
@@ -76,16 +79,15 @@ int set_task(struct Tasks *tasks, int is_absolute, struct itimerspec value)
 int cancel_task(struct Tasks *tasks, int task_id)
 {
     if (!tasks)
-        return NULL;
-
+        return -1;
     if (tasks->tasks[task_id].is_running)
     {
         timer_delete(tasks->tasks[task_id].timer_id);
         tasks->tasks[task_id].is_running = 0;
-        return 1;
+        return task_id;
     }
 
-    return 0;
+    return -1;
 }
 
 void initialize_tasks(struct Tasks *tasks)
@@ -94,6 +96,45 @@ void initialize_tasks(struct Tasks *tasks)
     {
         tasks->tasks[x].is_running = 0;
     }
+}
+
+int get_all_running_tasks(struct Tasks *tasks_list, struct Tasks *tasks_table)
+{
+    tasks_list->tasks_count = 0;
+    for (int x = 0; x < TASKS_COUNT; x++)
+    {
+        if (tasks_table->tasks[x].is_running == 1)
+        {
+            memcpy(&tasks_list->tasks[tasks_list->tasks_count], &tasks_table->tasks[x], sizeof(Task));
+            tasks_list->tasks_count++;
+        }
+    }
+}
+
+int respond_to_client(char *res_queue, MessageType res_type, int task_id, struct Tasks *tasks)
+{
+    if (!res_queue)
+        return NULL;
+
+    int mq;
+    mq = mq_open(res_queue, O_WRONLY);
+    if (mq == -1)
+        return -1;
+
+    struct Response res = {.task_id = task_id};
+    int ress;
+    switch (res_type)
+    {
+    case SET_TASK:
+    case CANCEL_TASK:
+        mq_send(mq, (const char *)&res, sizeof(struct Response), 0);
+        break;
+    case LIST_TASKS:
+        ress = mq_send(mq, (const char *)tasks, sizeof(struct Tasks), 0);
+        break;
+    }
+    mq_close(mq);
+    return 0;
 }
 
 void *timer_notify(void *args)

@@ -1,6 +1,6 @@
 #import "mycron.h"
 
-extern const char* queue_name;
+extern const char *queue_name;
 
 int myCronClient(int argc, char *argv[])
 {
@@ -15,10 +15,56 @@ int myCronClient(int argc, char *argv[])
 
     Message *msg = parse_request(argc, argv);
 
+    sprintf(msg->response_queue, "%s_res_%d", queue_name, getpid());
+
+    struct mq_attr attr;
+
+    attr.mq_flags = 0;
+    attr.mq_maxmsg = 10;
+    attr.mq_msgsize = sizeof(struct Tasks);
+    printf("%s\n", msg->response_queue);
+    mqd_t mqr = mq_open((const char *)msg->response_queue, O_RDONLY | O_CREAT, 0666, &attr);
+    if (mqr == -1)
+    {
+        printf("Failed to open response queue with errno %d\n", errno);
+        return -1;
+    }
+
     int ret = mq_send(mq, (const char *)msg, sizeof(Message), 1);
 
-    free(msg);
+    void *response = malloc(sizeof(struct Tasks));
+
+    ret = mq_receive(mqr, (char *)response, sizeof(struct Tasks), NULL);
+    printf("ret %d %d\n", ret, errno);
+
+    handle_response_from_service(msg->type, response);
+
     mq_close(mq);
+    mq_close(mqr);
+    mq_unlink(msg->response_queue);
+    free(msg);
+    free(response);
+}
+
+void handle_response_from_service(MessageType type, void *response)
+{
+    switch (type)
+    {
+    case SET_TASK:
+        printf("Task has been set with id %d\n", ((struct Response *)response)->task_id);
+        return;
+    case CANCEL_TASK:
+        printf("Task with id %d has been cancelled\n", ((struct Response *)response)->task_id);
+        return;
+    case LIST_TASKS:
+        printf("Currently running tasks:\n");
+        printf("Task ID\n");
+        for (int x = 0; x < ((struct Tasks *)response)->tasks_count; x++)
+        {
+            printf("%d\n", ((struct Tasks *)response)->tasks[x].task_id);
+        }
+        break;
+    }
 }
 
 Message *parse_request(int argc, char *argv[])

@@ -1,6 +1,6 @@
 #include "mycron.h"
 
-const char *queue_name = "/cron_queuee";
+const char *queue_name = "/cron_queue";
 
 void myCronInit(int argc, char *argv[])
 {
