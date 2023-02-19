@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <time.h>
 #include <string.h>
+#include <spawn.h>
 
 #define TASKS_COUNT 50
 
@@ -24,6 +25,9 @@ typedef struct TaskRequest
 {
     int is_absolute;
     struct itimerspec time;
+    char task[50];
+    char argv[10][20];
+    int argc;
 } TaskRequest;
 
 typedef struct Message
@@ -40,7 +44,10 @@ typedef struct Message
 typedef struct Task
 {
     int is_running;
+    int is_cyclic;
     int task_id;
+    char *task;
+    char **argv;
     timer_t timer_id;
 } Task;
 
@@ -50,7 +57,8 @@ struct Tasks
     Task tasks[TASKS_COUNT];
 };
 
-struct Response{
+struct Response
+{
     int task_id;
 };
 
@@ -59,13 +67,14 @@ void myCronInit(int argc, char *argv[]);
 
 int myCronServer();
 int myCronClient(int argc, char *argv[]);
-timer_t create_timer();
-int set_task(struct Tasks *tasks, int is_absolute, struct itimerspec value);
+timer_t create_timer(Task *task);
+int set_task(struct Tasks *tasks, int is_absolute, struct itimerspec value, char* task, char** argv, int argc);
 int cancel_task(struct Tasks *tasks, int task_id);
 int get_all_running_tasks(struct Tasks *tasks_list, struct Tasks *tasks_table);
 Message *parse_request(int argc, char *argv[]);
-int respond_to_client(char* res_queue, MessageType res_type, int task_id, struct Tasks *tasks);
+int respond_to_client(char *res_queue, MessageType res_type, int task_id, struct Tasks *tasks);
 void handle_response_from_service(MessageType type, void *response);
+char** parse_argv(char**argv, int count);
 void *timer_notify(void *args);
 
 #endif

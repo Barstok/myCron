@@ -15,6 +15,9 @@ int myCronClient(int argc, char *argv[])
 
     Message *msg = parse_request(argc, argv);
 
+    if (msg == NULL)
+        return -1;
+
     sprintf(msg->response_queue, "%s_res_%d", queue_name, getpid());
 
     struct mq_attr attr;
@@ -71,41 +74,47 @@ Message *parse_request(int argc, char *argv[])
 {
     if (argc == 0)
         return NULL;
-
+    int count = 1;
     Message *msg = malloc(sizeof(Message));
-
-    if (strcmp("set", *(argv + 1)) == 0)
+    argv++;
+    if (strcmp("set", *(argv)) == 0)
         msg->type = SET_TASK;
-    else if (strcmp("cancel", *(argv + 1)) == 0)
+    else if (strcmp("cancel", *(argv)) == 0)
         msg->type = CANCEL_TASK;
-    else if (strcmp("list", *(argv + 1)) == 0)
+    else if (strcmp("list", *(argv)) == 0)
         msg->type = LIST_TASKS;
     else
     {
         free(msg);
         return NULL;
     }
-
+    argv++;
+    count++;
     switch (msg->type)
     {
     case SET_TASK:
         printf("set\n");
-
-        if (strcmp(*(argv + 2), "-a") == 0)
+        printf("%s\n", *argv);
+        if (strcmp(*(argv), "-a") == 0)
         {
             printf("czas bezwzgledny");
+            count++;
+            argv++;
         }
 
-        int time = atoi(*(argv + 2));
+        int time = atoi(*(argv));
         if (time < 0)
         {
-            free(msg);
             return NULL;
         }
         int interval = 0;
-        if (argc >= 4 && strcmp(*(argv + 3), "-i") == 0)
+        argv++;
+        count++;
+        if (count < argc && strcmp(*(argv), "-i") == 0)
         {
-            interval = atoi(*(argv + 4));
+            argv++;
+            count++;
+            interval = atoi(*(argv));
         }
 
         msg->request.time.it_value.tv_sec = time;
@@ -113,10 +122,37 @@ Message *parse_request(int argc, char *argv[])
         msg->request.time.it_interval.tv_sec = interval;
         msg->request.time.it_interval.tv_nsec = 0;
 
+        if (count < argc)
+        {
+            strcpy(msg->request.task, *argv);
+            printf("%s\n", msg->request.task);
+        }
+        else
+        {
+            printf("No task specified.");
+            return NULL;
+        }
+        count++;
+        argv++;
+        for (int x = 0; x < 10; x++)
+        {
+            if (count == argc)
+            {
+                msg->request.argc=x;
+                //msg->request.argv[x] = NULL;
+                break;
+            }
+            printf("argv %s\n", *argv);
+            strcpy(msg->request.argv[x], *argv);
+            printf("%s\n", msg->request.argv[x]);
+            count++;
+            argv++;
+        }
+
         return msg;
     case CANCEL_TASK:
         printf("cancel\n");
-        msg->cancelled_task_id = atoi(*(argv + 2));
+        msg->cancelled_task_id = atoi(*(argv));
         return msg;
     case LIST_TASKS:
         printf("list\n");
