@@ -12,7 +12,8 @@ int myCronServer()
 
     struct mq_attr attr;
 
-    sem_init(&sem_tasks, 0, 0);
+    logger_init(STANDARD, "cron_logs.txt", NULL, NULL);
+    sem_init(&sem_tasks, 0, 1);
 
     initialize_tasks(&tasks);
 
@@ -37,7 +38,6 @@ int myCronServer()
         switch (msg.type)
         {
         case SET_TASK:
-            printf("%s", *msg.request.argv);
             id = set_task(&tasks, 0, msg.request.time, msg.request.task, msg.request.argv, msg.request.argc);
             break;
         case CANCEL_TASK:
@@ -45,12 +45,17 @@ int myCronServer()
             break;
         case LIST_TASKS:
             get_all_running_tasks(&task_list, &tasks);
+            break;
+        case TERMINATE:
+            cancel_all_tasks();
+            sem_destroy(&sem_tasks);
+            mq_unlink(queue_name);
+            log_msg(STANDARD, "Cron terminated");
+            logger_close();
+            return 0;
         }
         respond_to_client(msg.response_queue, msg.type, id, &task_list);
     }
-
-    sem_destroy(&sem_tasks);
-    return 0;
 }
 
 timer_t create_timer(Task *task)
@@ -69,11 +74,10 @@ int set_task(struct Tasks *tasks, int is_absolute, struct itimerspec value, char
 {
     for (int x = 0; x < TASKS_COUNT; x++)
     {
+        sem_wait(&sem_tasks);
         if (tasks->tasks[x].is_running == 0)
         {
-            sem_wait(&sem_tasks);
             tasks->tasks[x].task = task;
-            printf("ARGC = %d\n", argc);
             tasks->tasks[x].argv = parse_argv(argv, argc);
             timer_t timer_id = create_timer(&tasks->tasks[x]);
 
@@ -86,10 +90,14 @@ int set_task(struct Tasks *tasks, int is_absolute, struct itimerspec value, char
                 tasks->tasks[x].is_cyclic = 0;
             tasks->tasks[x].task_id = x;
             sem_post(&sem_tasks);
+
+            log_msg(STANDARD, "Timer has been created");
             return x;
         }
+        sem_post(&sem_tasks);
     }
 
+    log_msg(STANDARD, "Timer creating failed");
     return -1;
 }
 
@@ -102,10 +110,20 @@ int cancel_task(struct Tasks *tasks, int task_id)
     {
         timer_delete(tasks->tasks[task_id].timer_id);
         tasks->tasks[task_id].is_running = 0;
+        sem_post(&sem_tasks);
+        log_msg(STANDARD, "Timer has been cancelled");
         return task_id;
     }
     sem_post(&sem_tasks);
     return -1;
+}
+
+void cancel_all_tasks()
+{
+    for (int x = 0; x < TASKS_COUNT; x++)
+    {
+        cancel_task(&tasks, x);
+    }
 }
 
 void initialize_tasks(struct Tasks *tasks)
@@ -131,6 +149,10 @@ int get_all_running_tasks(struct Tasks *tasks_list, struct Tasks *tasks_table)
         }
     }
     sem_post(&sem_tasks);
+
+    log_msg(STANDARD, "All tasks listed");
+
+    return 0;
 }
 
 int respond_to_client(char *res_queue, MessageType res_type, int task_id, struct Tasks *tasks)
@@ -163,30 +185,31 @@ void *timer_notify(void *args)
 {
     if (!args)
         return NULL;
-    printf("Odpalil sie handler elegancko\n");
+
     sem_wait(&sem_tasks);
     struct Task *task = (struct Task *)args;
-    printf("timer notify task_id %d\n", task->task_id);
-
+    char *argv[] = {"test", NULL};
     pid_t pid;
-    printf("posix spawn\n");
-    printf("%s", task->task);
-    char *argv[] = {"test", "xd", "pdw", NULL};
+    
     int status = posix_spawn(&pid, task->task, NULL, NULL, argv, NULL);
-    if(!task->is_cyclic){
+    if (!task->is_cyclic)
+    {
         timer_delete(task->timer_id);
         task->is_running = 0;
     }
     sem_post(&sem_tasks);
+    log_msg(STANDARD, "Task has been executed");
     printf("Status %d\n", status);
 }
 
-char** parse_argv(char** argv, int count){
-    char **p_argv = calloc(10, sizeof(char*));
+char **parse_argv(char **argv, int count)
+{
+    char **p_argv = calloc(10, sizeof(char *));
 
-    for(int x=0; x<count;x++){
-        *(p_argv+x) = *(argv+x);
+    for (int x = 0; x < count; x++)
+    {
+        *(p_argv + x) = *(argv + x);
     }
-    
+
     return p_argv;
 }

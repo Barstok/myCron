@@ -5,12 +5,15 @@
 #include <unistd.h>
 #include <mqueue.h>
 #include <fcntl.h>
+#include <semaphore.h>
+#include <pthread.h>
 #include <sys/stat.h>
 #include <signal.h>
 #include <errno.h>
 #include <time.h>
 #include <string.h>
 #include <spawn.h>
+#include "../LoggerLib/logger.h"
 
 #define TASKS_COUNT 50
 
@@ -18,7 +21,8 @@ typedef enum
 {
     SET_TASK,
     CANCEL_TASK,
-    LIST_TASKS
+    LIST_TASKS,
+    TERMINATE
 } MessageType;
 
 typedef struct TaskRequest
@@ -70,6 +74,7 @@ int myCronClient(int argc, char *argv[]);
 timer_t create_timer(Task *task);
 int set_task(struct Tasks *tasks, int is_absolute, struct itimerspec value, char* task, char** argv, int argc);
 int cancel_task(struct Tasks *tasks, int task_id);
+void cancel_all_tasks();
 int get_all_running_tasks(struct Tasks *tasks_list, struct Tasks *tasks_table);
 Message *parse_request(int argc, char *argv[]);
 int respond_to_client(char *res_queue, MessageType res_type, int task_id, struct Tasks *tasks);

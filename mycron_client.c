@@ -35,18 +35,20 @@ int myCronClient(int argc, char *argv[])
 
     int ret = mq_send(mq, (const char *)msg, sizeof(Message), 1);
 
-    void *response = malloc(sizeof(struct Tasks));
+    if (msg->type != TERMINATE)
+    {
+        void *response = malloc(sizeof(struct Tasks));
 
-    ret = mq_receive(mqr, (char *)response, sizeof(struct Tasks), NULL);
-    printf("ret %d %d\n", ret, errno);
+        ret = mq_receive(mqr, (char *)response, sizeof(struct Tasks), NULL);
 
-    handle_response_from_service(msg->type, response);
+        handle_response_from_service(msg->type, response);
+        free(response);
+    }
 
     mq_close(mq);
     mq_close(mqr);
     mq_unlink(msg->response_queue);
     free(msg);
-    free(response);
 }
 
 void handle_response_from_service(MessageType type, void *response)
@@ -83,6 +85,11 @@ Message *parse_request(int argc, char *argv[])
         msg->type = CANCEL_TASK;
     else if (strcmp("list", *(argv)) == 0)
         msg->type = LIST_TASKS;
+    else if (strcmp("terminate", *(argv)) == 0)
+    {
+        msg->type = TERMINATE;
+        return msg;
+    }
     else
     {
         free(msg);
@@ -93,11 +100,9 @@ Message *parse_request(int argc, char *argv[])
     switch (msg->type)
     {
     case SET_TASK:
-        printf("set\n");
         printf("%s\n", *argv);
         if (strcmp(*(argv), "-a") == 0)
         {
-            printf("czas bezwzgledny");
             count++;
             argv++;
         }
@@ -138,11 +143,10 @@ Message *parse_request(int argc, char *argv[])
         {
             if (count == argc)
             {
-                msg->request.argc=x;
-                //msg->request.argv[x] = NULL;
+                msg->request.argc = x;
+                // msg->request.argv[x] = NULL;
                 break;
             }
-            printf("argv %s\n", *argv);
             strcpy(msg->request.argv[x], *argv);
             printf("%s\n", msg->request.argv[x]);
             count++;
@@ -151,12 +155,9 @@ Message *parse_request(int argc, char *argv[])
 
         return msg;
     case CANCEL_TASK:
-        printf("cancel\n");
         msg->cancelled_task_id = atoi(*(argv));
         return msg;
     case LIST_TASKS:
-        printf("list\n");
-
         return msg;
     }
 }
